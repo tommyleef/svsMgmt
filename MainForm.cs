@@ -1,8 +1,8 @@
 ﻿/*
  * Created by SharpDevelop.
  * User: Tommy
- * Date: 7/16/2017
- * Time: 12:54 PM
+ * Date: 7/24/2017
+ * Time: 5:37 AM
  * 
  * To change this template use Tools | Options | Coding | Edit Standard Headers.
  */
@@ -10,19 +10,21 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
-using System.DirectoryServices;
-using System.DirectoryServices.ActiveDirectory;
-using System.Net.NetworkInformation;
+using System.ComponentModel;
+using System.Data;
 using System.Management;
+using System.Net.NetworkInformation;
+using System.DirectoryServices;
 
-
-namespace ClientIwsOP
+namespace ComparePkg
 {
 	/// <summary>
 	/// Description of MainForm.
 	/// </summary>
 	public partial class MainForm : Form
 	{
+		private BackgroundWorker myWorker = new BackgroundWorker();
+		
 		public MainForm()
 		{
 			//
@@ -30,45 +32,167 @@ namespace ClientIwsOP
 			//
 			InitializeComponent();
 			
-			//
-			// TODO: Add constructor code after the InitializeComponent() call.
-			//
+			myWorker.DoWork += new DoWorkEventHandler(myWorker_DoWork);
+		    myWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(myWorker_RunWorkerCompleted);
+		    myWorker.ProgressChanged += new ProgressChangedEventHandler(myWorker_ProgressChanged);
+		    myWorker.WorkerReportsProgress = true;
+		    myWorker.WorkerSupportsCancellation = true;
 		}
 		
-		void MainFormLoad(object sender, EventArgs e)
+		protected void myWorker_DoWork(object sender, DoWorkEventArgs e)
 		{
-			string str_ouname = "CUTE-WKS";
-			string str_entry = string.Format(@"LDAP://OU={0},DC=TSA1-IROOT,DC=LOCAL",str_ouname);
-		    DirectoryEntry entry = new DirectoryEntry( str_entry );    
-		    DirectorySearcher mySearcher = new DirectorySearcher(entry);
-
-		    mySearcher.Filter = (@"(objectClass=computer)");    
-		    mySearcher.SizeLimit = int.MaxValue;
-    		mySearcher.PageSize = int.MaxValue;
-    		
-    		//int i=0;
-    		foreach(SearchResult resEnt in mySearcher.FindAll())
-		    {
-		        string ComputerName = resEnt.Properties["cn"][0].ToString();
-		        string str_iwsstate = MainForm.PingHost(ComputerName);
-		        //i++;
-		        //if( i == 30 )
-		        	//break;
-		        
-		        if (ComputerName.Contains("CK") || ComputerName.Contains("GT") || ComputerName.Contains("TSA1B"))
-		        {
-		        	ListViewItem item = new ListViewItem(ComputerName);
-		        	item.SubItems.Add( str_iwsstate );
-		        	if( str_iwsstate != "Online" )
-		        		item.BackColor = System.Drawing.Color.Gray;
-		        	lv_complist.Items.Add( item );  	
-		        }
-		    }
-		
-		    mySearcher.Dispose();
-		    entry.Dispose();
+			BackgroundWorker sendingWorker = (BackgroundWorker)sender;//Capture the BackgroundWorker that fired the event
+            object[] arrObjects = (object[])e.Argument;//Collect the array of objects the we recived from the main thread
+ 
 		}
-
+		
+		protected void myWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+		{
+		
+		}
+		
+		protected void myWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+		{
+		
+		}
+		
+		void BtcompareClick(object sender, EventArgs e)
+		{
+			toolStripStatusLabel1.Text = string.Format(@"Compare {0} with TSA1CKB510.",lboxiwslist.SelectedItem.ToString());
+			string standardiws = "tsa1ckb510";
+			List<string> standardnames = new List<string>();
+			
+			try
+			{
+				ManagementClass vspClass = new ManagementClass( string.Format(@"\\{0}\root\default:VirtualSoftwarePackage",standardiws) );
+				ManagementObjectCollection vspCollection =  vspClass.GetInstances();
+				
+				foreach (ManagementObject vspObject in vspCollection)
+	            {
+					standardnames.Add( vspObject.GetPropertyValue("Name").ToString() );
+	            }
+			}
+			catch( Exception ex )
+			{
+				lberror.Text = "Catch error:"+ex.Message;
+			}
+			
+			List<string> packagenames = new List<string>();
+			
+			try{
+			foreach( DataGridViewRow row in dgvpkgname.Rows )
+			{
+				for( int i = 0 ; i < standardnames.Count ; i++ )
+				{
+					if( string.Equals( standardnames[i] , row.Cells[0].Value.ToString() , StringComparison.OrdinalIgnoreCase ) )
+					{
+						standardnames.RemoveAt(i); // if find the same name, reomve from list
+					}
+					else
+					{
+						if( packagenames.Count == 0 )
+							packagenames.Add( row.Cells[0].Value.ToString() );
+						else
+						{
+							foreach( string pkgname in packagenames )
+							{
+								if( !string.Equals( pkgname , row.Cells[0].Value.ToString() , StringComparison.OrdinalIgnoreCase ) )
+								   packagenames.Add( row.Cells[0].Value.ToString() );
+							}
+						}
+					}
+				}
+			}
+			}catch( Exception ex )
+			{
+				lberror.Text = "Catch error2:"+ex.Message;
+			}
+			
+			try{
+			dgvresult.DataSource = null;
+			dgvresult.Columns.Add( "iws" , "IWS Name");
+			dgvresult.Columns.Add( "pkgname" , "Package Name" );
+			dgvresult.Columns[1].Width = 340;
+			
+			foreach( string pkgname in standardnames )
+			{
+				this.dgvresult.Rows.Add( standardiws , pkgname );
+			}
+			
+			foreach( string pkgname in packagenames )
+			{
+				this.dgvresult.Rows.Add( lboxiwslist.SelectedItem.ToString() , pkgname );
+			}
+			}catch( Exception ex )
+			{
+				lberror.Text = "Catch error3:"+ex.Message;
+			}
+		}
+		
+		private void SetbtnsEnabled()
+		{
+			btcompare.Enabled = false;
+			btlist.Enabled = false;
+		}
+		
+		void BtlistClick(object sender, EventArgs e)
+		{
+			if( !ChecklistboxSelected() )
+				return;
+			
+			string str_iws = lboxiwslist.SelectedItem.ToString();
+			
+			toolStripStatusLabel1.Text = string.Format(@"Waiting {0} reply message.",str_iws);
+				
+			if( !string.Equals("online", MainForm.PingHost(str_iws), StringComparison.OrdinalIgnoreCase) )
+			{
+				toolStripStatusLabel1.Text = string.Format(@"{0} is not Online.",str_iws);
+				return;
+			}
+			else
+				toolStripStatusLabel1.Text = string.Empty;
+			
+			try
+			{
+				dgvpkgname.DataSource = null;
+				
+				ManagementClass vspClass = new ManagementClass( string.Format(@"\\{0}\root\default:VirtualSoftwarePackage",str_iws) );
+				ManagementObjectCollection vspCollection =  vspClass.GetInstances();
+				
+				DataTable dtpkglist = new DataTable(str_iws);
+				dtpkglist.Columns.Add("PackageName");
+				//dtpkglist.Columns.Add("Id");
+				DataRow drpkg;
+				
+				foreach (ManagementObject vspObject in vspCollection)
+	            {
+					drpkg = dtpkglist.NewRow();
+					drpkg["PackageName"] = vspObject.GetPropertyValue("Name").ToString();
+					//drpkg["Id"] = vspObject.GetPropertyValue("Id").ToString();
+					dtpkglist.Rows.Add(drpkg);
+	            }
+				
+				dgvpkgname.DataSource = dtpkglist;
+				dgvpkgname.Columns[0].Width = 297;
+				//dgvpkgname.Columns[0].
+			}
+			catch( Exception ex )
+			{
+				lberror.Text = "Catch error:"+ex.Message;
+			}
+		}
+		
+		private bool ChecklistboxSelected()
+		{
+			if( lboxiwslist.SelectedIndex == -1 )
+			{
+				MessageBox.Show("Please select a computer.");
+				return false;
+			}
+			else
+				return true;
+		}
+		
 		public static string PingHost(string host)
 		{
 			//string to hold our return messge
@@ -98,130 +222,29 @@ namespace ClientIwsOP
 			return returnMessage;
 		}
 		
-		void Lv_complistItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e)
+		void MainFormLoad(object sender, EventArgs e)
 		{
-			lb_test.Text = e.Item.SubItems[0].Text;
-			if( e.IsSelected && e.Item.SubItems[1].Text != "Online" )
-			{
-				e.Item.Selected = false;
-				lb_test.Text = "Client Computer is not Online";
-			}
-		}
-		
-		void Ckb_mulitselectCheckedChanged(object sender, EventArgs e)
-		{
-			if( ckb_mulitselect.Checked )
-				lv_complist.MultiSelect = true;
-			else
-				lv_complist.MultiSelect = false;
-		}
-		
-		void Bt_showvspinfoClick(object sender, EventArgs e)
-		{
-			string str_iws = lv_complist.SelectedItems[0].Text;
+			string str_ouname = "CUTE-WKS";
+			string str_entry = string.Format(@"LDAP://OU={0},DC=TSA1-IROOT,DC=LOCAL",str_ouname);
+		    DirectoryEntry entry = new DirectoryEntry( str_entry );    
+		    DirectorySearcher mySearcher = new DirectorySearcher(entry);
 
-			lv_vspinfo.Items.Clear();
-			try
-			{
-				ManagementClass vspClass = new ManagementClass( string.Format(@"\\{0}\root\default:VirtualSoftwarePackage",str_iws) );
-				ManagementObjectCollection vspCollection =  vspClass.GetInstances();
-				
-				List<string> propertyname = new List<string>();
-				
-				foreach( PropertyData property in vspClass.Properties )
-				{
-					propertyname.Add( property.Name );
-					
-				}
-				
-				ListViewItem lvitem;
-				
-				foreach (ManagementObject vspObject in vspCollection)
-	            {
-					int index = propertyname.IndexOf("Name");
-					if( index >= 0 )
-					{
-						lvitem = new ListViewItem( vspObject.GetPropertyValue(propertyname[index]).ToString() );
-						
-						index = propertyname.IndexOf("Id");
-						if( index >= 0 )
-							lvitem.SubItems.Add( vspObject.GetPropertyValue( propertyname[index]).ToString() );
-						else
-							lvitem.SubItems.Add("None");
-						
-						index = propertyname.IndexOf("Active");
-						if( index >= 0 )
-							lvitem.SubItems.Add( vspObject.GetPropertyValue( propertyname[index]).ToString() );
-						else
-							lvitem.SubItems.Add("none");
-						
-						index = propertyname.IndexOf("ActivatedTime");
-						if( index >= 0 )
-							lvitem.SubItems.Add( vspObject.GetPropertyValue( propertyname[index]).ToString() );
-						else
-							lvitem.SubItems.Add("none");
-						
-						index = propertyname.IndexOf("ResetTime");
-						if( index >= 0 )
-						{
-							lb_result.Text = index.ToString();
-							if( vspObject.GetPropertyValue( propertyname[index]) == null )
-							{
-								lvitem.SubItems.Add("N/A");
-							}
-							else
-								lvitem.SubItems.Add( vspObject.GetPropertyValue( propertyname[index]).ToString() );
-						}
-						else
-							lvitem.SubItems.Add("none");
-						
-						index = propertyname.IndexOf("CreatedTime");
-						if( index >= 0 )
-							lvitem.SubItems.Add( vspObject.GetPropertyValue( propertyname[index]).ToString() );
-						else
-							lvitem.SubItems.Add("none");
-						
-						index = propertyname.IndexOf("AutoActivate");
-						if( index >= 0 )
-							lvitem.SubItems.Add( vspObject.GetPropertyValue( propertyname[index]).ToString() );
-						else
-							lvitem.SubItems.Add("none");
-						
-						lv_vspinfo.Items.Add( lvitem );
-					}
-	            }
-			}
-			catch( Exception ex )
-			{
-				lb_test.Text = "Catch error:"+ex.Message;
-			}
-		}
+		    mySearcher.Filter = (@"(objectClass=computer)");    
+		    mySearcher.SizeLimit = int.MaxValue;
+    		mySearcher.PageSize = int.MaxValue;
+
+    		foreach(SearchResult resEnt in mySearcher.FindAll())
+		    {
+		        string ComputerName = resEnt.Properties["cn"][0].ToString();
+
+		        if (ComputerName.Contains("CK") || ComputerName.Contains("GT") || ComputerName.Contains("TSA1B"))
+		        {
+		        	lboxiwslist.Items.Add( ComputerName );
+		        }
+		    }
 		
-		void Bt_activateClick(object sender, EventArgs e)
-		{
-			/*string str_iws = lv_complist.SelectedItems[0].Text;
-			try
-			{
-				ManagementClass MyClass = new ManagementClass( string.Format(@"\\{0}\root\default:VirtualSoftwarePackage",str_iws) );
-				ManagementObjectCollection MyCollection =  MyClass.GetInstances();
-				//ListViewItem item1 = new ListViewItem(str_iws);
-				lv_vspinfo.Clear();
-				
-				foreach (ManagementObject MyObject in MyCollection)
-	            {
-					lv_vspinfo.Items.Add( "ID="+MyObject.Properties["Id"].Value.ToString() );
-					lv_vspinfo.Items.Add( "Name="+MyObject.Properties["Name"].Value.ToString() );
-					lv_vspinfo.Items.Add( "Active="+MyObject.Properties["Active"].Value.ToString() );
-					lv_vspinfo.Items.Add( "AutoActivate="+MyObject.Properties["AutoActivate"].Value.ToString() );
-					//item1.SubItems.Add( "ID="+MyObject.Properties["Id"].Value.ToString() );
-					//item1.SubItems.Add( "Name="+MyObject.Properties["Name"].Value.ToString() );
-	            }
-				
-			}
-			catch( Exception ex )
-			{
-				lb_test.Text = "Catch error:"+ex.Message;
-			}*/
+		    mySearcher.Dispose();
+		    entry.Dispose();
 		}
 	}
 }
