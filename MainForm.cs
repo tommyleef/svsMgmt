@@ -86,20 +86,22 @@ namespace ComparePkg
 				{
 					if( string.Equals( standardnames[i] , row.Cells[0].Value.ToString() , StringComparison.OrdinalIgnoreCase ) )
 					{
-						standardnames.RemoveAt(i); // if find the same name, reomve from list
+						standardnames.RemoveAt(i); // if find the same name, reomve from standard list
+						if( packagenames.Contains(row.Cells[0].Value.ToString()) )
+							packagenames.Remove(row.Cells[0].Value.ToString());
 					}
-					else
+					else // if not the same
 					{
-						if( packagenames.Count == 0 )
+						if( !packagenames.Contains(row.Cells[0].Value.ToString()) ) // if package list is zero, add to package list
 							packagenames.Add( row.Cells[0].Value.ToString() );
-						else
+						/*else
 						{
 							foreach( string pkgname in packagenames )
 							{
 								if( !string.Equals( pkgname , row.Cells[0].Value.ToString() , StringComparison.OrdinalIgnoreCase ) )
 								   packagenames.Add( row.Cells[0].Value.ToString() );
 							}
-						}
+						}*/						
 					}
 				}
 			}
